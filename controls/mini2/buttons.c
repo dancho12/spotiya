@@ -101,8 +101,17 @@ static void key_event(struct gesture *g, unsigned code, int value, int64_t now) 
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
-#include "lights.h"
-#include "display.h"
+#ifndef LIGHTS_HEADER
+#define LIGHTS_HEADER "lights.h"
+#endif
+#ifndef DISPLAY_HEADER
+#define DISPLAY_HEADER "display.h"
+#endif
+#include LIGHTS_HEADER
+#include DISPLAY_HEADER
+#ifndef DISPLAY_DIRECTION
+#define DISPLAY_DIRECTION(display, up) ((void)(display), (void)(up))
+#endif
 
 #define EVIOCGRAB 0x40044590UL
 #define EVIOCGKEY96 0x80604518UL
@@ -182,9 +191,11 @@ int mini2_buttons_run(const struct mini2_config *config) {
             int previous_volume = current_volume, was_active = wanted;
             wanted = spotify_active();
             probe_at = now_us(CLOCK_MONOTONIC) + 300000;
-            if (wanted && was_active && current_volume != previous_volume)
+            if (wanted && was_active && current_volume != previous_volume) {
+                DISPLAY_DIRECTION(&display, current_volume > previous_volume);
                 display_show(&display, current_steps > 0 ? current_volume * 100 / current_steps : 0,
                              now_us(CLOCK_MONOTONIC));
+            }
             if (!wanted) {
                 /* A track change reports Spotify inactive while it loads; gesture
                  * feedback still plays to its end below. */
@@ -262,16 +273,18 @@ int mini2_buttons_run(const struct mini2_config *config) {
                  * already loading and Spotify briefly reports itself inactive. */
                 lights_begin(&lights, queue[i], feedback_paused, current_volume, current_steps,
                              now);
-                if (queue[i] == LOUDER || queue[i] == QUIETER)
+                if (queue[i] == LOUDER || queue[i] == QUIETER) {
+                    DISPLAY_DIRECTION(&display, queue[i] == LOUDER);
                     display_show(&display,
                                  current_steps > 0 ? current_volume * 100 / current_steps : 0, now);
-                else
+                } else {
                     display_play(&display,
                                  queue[i] == NEXT   ? &control_config.clock_next
                                  : queue[i] == PREV ? &control_config.clock_previous
                                  : feedback_paused  ? &control_config.clock_pause
                                                     : NULL,
                                  now);
+                }
             } else {
                 note(" failed; returning controls\n");
                 wanted = 0;

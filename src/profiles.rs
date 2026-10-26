@@ -9,6 +9,7 @@ use std::{
 
 const MINI1: &str = include_str!("../profiles/mini1.json");
 const MINI2: &str = include_str!("../profiles/mini2.json");
+const MINI3: &str = include_str!("../profiles/mini3.json");
 const GENERIC: &str = include_str!("../profiles/generic.json");
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -66,6 +67,7 @@ pub struct Voice {
 #[serde(rename_all = "snake_case")]
 pub enum Driver {
     Mini2,
+    Mini3,
 }
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -265,26 +267,50 @@ fn capabilities(p: &Profile, root: &Path) -> Capabilities {
                         })
                 })
         });
-        caps.ring = c.ring_prefix.as_ref().is_some_and(|prefix| {
-            ["red", "green", "blue"].iter().all(|color| {
-                (1..=6).all(|segment| {
-                    rooted(root, &format!("{prefix}{color}:ring{segment}/brightness")).exists()
-                })
-            })
-        });
-        caps.display = c.display_prefix.as_ref().is_some_and(|prefix| {
-            (1..=4).all(|digit| {
-                (b'A'..=b'G').all(|segment| {
-                    rooted(
-                        root,
-                        &format!("{prefix}{}{digit}/brightness", char::from(segment)),
-                    )
-                    .exists()
-                })
-            }) && ["PLUS1", "PLUS2", "PLUS3", "PLUS4", "MINUS", "DEGREE"]
-                .iter()
-                .all(|suffix| rooted(root, &format!("{prefix}{suffix}/brightness")).exists())
-        });
+        match c.driver {
+            Driver::Mini2 => {
+                caps.ring = c.ring_prefix.as_ref().is_some_and(|prefix| {
+                    ["red", "green", "blue"].iter().all(|color| {
+                        (1..=6).all(|segment| {
+                            rooted(root, &format!("{prefix}{color}:ring{segment}/brightness")).exists()
+                        })
+                    })
+                });
+                caps.display = c.display_prefix.as_ref().is_some_and(|prefix| {
+                    (1..=4).all(|digit| {
+                        (b'A'..=b'G').all(|segment| {
+                            rooted(root, &format!("{prefix}{}{digit}/brightness", char::from(segment)))
+                                .exists()
+                        })
+                    }) && ["PLUS1", "PLUS2", "PLUS3", "PLUS4", "MINUS", "DEGREE"]
+                        .iter()
+                        .all(|suffix| rooted(root, &format!("{prefix}{suffix}/brightness")).exists())
+                });
+            }
+            Driver::Mini3 => {
+                caps.ring = c.ring_prefix.as_deref() == Some("/dev/fb0")
+                    && rooted(root, "/dev/fb0").exists()
+                    && fs::read_to_string(rooted(root, "/sys/class/graphics/fb0/virtual_size"))
+                        .is_ok_and(|size| size.trim() == "6,1");
+                caps.display = c.display_prefix.as_deref()
+                    == Some("/sys/class/leds/bergamot:white:clock")
+                    && (0..4).all(|digit| {
+                        (b'A'..=b'G').all(|segment| {
+                            rooted(root, &format!(
+                                "/sys/class/leds/bergamot:white:clock{}{digit}/brightness",
+                                char::from(segment)
+                            ))
+                            .exists()
+                        })
+                    })
+                    && ["DEGREE", "DH", "DL", "DM"].iter().all(|suffix| {
+                        rooted(root, &format!(
+                            "/sys/class/leds/bergamot:white:clock{suffix}/brightness"
+                        ))
+                        .exists()
+                    });
+            }
+        }
     }
     caps
 }
@@ -341,6 +367,7 @@ fn load_at(selection: &str, state_dir: &Path, root: &Path) -> io::Result<Resolve
     let profile = match selection {
         "mini1" => parse(MINI1)?,
         "mini2" => parse(MINI2)?,
+        "mini3" => parse(MINI3)?,
         "generic" => parse(GENERIC)?,
         path => read_file(Path::new(path))?,
     };
@@ -393,6 +420,7 @@ struct NativeConfig {
 }
 unsafe extern "C" {
     fn mini2_buttons_run(config: *const NativeConfig) -> i32;
+    fn mini3_buttons_run(config: *const NativeConfig) -> i32;
 }
 impl Controls {
     pub fn run(&self, caps: Capabilities) -> io::Result<i32> {
@@ -436,7 +464,12 @@ impl Controls {
             clock_pause: NativeAnimation::of(&clock.pause),
             volume: NativeAnimation::of(&animations.volume),
         };
-        Ok(unsafe { mini2_buttons_run(&config) })
+        Ok(unsafe {
+            match self.driver {
+                Driver::Mini2 => mini2_buttons_run(&config),
+                Driver::Mini3 => mini3_buttons_run(&config),
+            }
+        })
     }
 }
 
@@ -473,6 +506,37 @@ mod tests {
         let r = f.load("auto").unwrap();
         assert_eq!(r.profile.id, "generic");
         assert!(!r.capabilities.controls() && !r.capabilities.voice);
+    }
+    #[test]
+    fn mini3_claims_only_matching_ring_and_clock_interfaces() {
+        let f = Fixture::new();
+        f.file("/dev/input/event1", b"");
+        f.file("/sys/class/input/event1/device/name", b"aw933xx\n");
+        f.file("/dev/fb0", b"");
+        f.file("/sys/class/graphics/fb0/virtual_size", b"6,1\n");
+        for digit in 0..4 {
+            for segment in b'A'..=b'G' {
+                f.file(
+                    &format!(
+                        "/sys/class/leds/bergamot:white:clock{}{digit}/brightness",
+                        char::from(segment)
+                    ),
+                    b"44\n",
+                );
+            }
+        }
+        for extra in ["DEGREE", "DH", "DL", "DM"] {
+            f.file(
+                &format!("/sys/class/leds/bergamot:white:clock{extra}/brightness"),
+                b"0\n",
+            );
+        }
+        let r = f.load("mini3").unwrap();
+        assert!(r.capabilities.buttons && r.capabilities.ring && r.capabilities.display);
+        assert!(!r.capabilities.voice);
+        f.file("/sys/class/graphics/fb0/virtual_size", b"8,1\n");
+        let r = f.load("mini3").unwrap();
+        assert!(!r.capabilities.ring);
     }
     #[test]
     fn mini1_uses_quasar_model_on_generic_device_tree_without_mini2_controls() {

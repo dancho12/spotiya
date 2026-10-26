@@ -65,7 +65,7 @@ pub fn read(state: &Path) -> io::Result<Option<Saved>> {
         saved.profile = Some(profiles::parse(&serde_json::to_string(&p)?)?);
     } else if !matches!(
         saved.selection.as_str(),
-        "auto" | "mini1" | "mini2" | "generic"
+        "auto" | "mini1" | "mini2" | "mini3" | "generic"
     ) {
         return Err(invalid("Unknown saved profile"));
     }
@@ -89,6 +89,11 @@ pub fn choices(state: &Path) -> io::Result<Vec<Choice>> {
             "Yandex Station Mini 2",
             "Mini 2 controls and Quasar IPC",
         ),
+        (
+            "mini3",
+            "Yandex Station Mini 3",
+            "Mini 3 buttons, framebuffer ring and clock",
+        ),
         ("generic", "Generic ALSA", "Audio only"),
     ] {
         out.push(Choice {
@@ -111,7 +116,7 @@ pub fn choices(state: &Path) -> io::Result<Vec<Choice>> {
                 if path.extension().is_none_or(|s| s != "json")
                     || matches!(
                         path.file_name().and_then(|s| s.to_str()),
-                        Some("mini1.json" | "mini2.json" | "generic.json")
+                        Some("mini1.json" | "mini2.json" | "mini3.json" | "generic.json")
                     )
                 {
                     continue;
@@ -159,7 +164,7 @@ pub fn resolve(state: &Path, selection: &str) -> io::Result<Saved> {
     } else {
         selection
     };
-    if matches!(selection, "auto" | "mini1" | "mini2" | "generic") {
+    if matches!(selection, "auto" | "mini1" | "mini2" | "mini3" | "generic") {
         return Ok(Saved {
             version: 1,
             selection: selection.into(),
