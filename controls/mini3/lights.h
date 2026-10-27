@@ -1,6 +1,7 @@
 /* Mini 3's six-pixel BGR ring is a single 18-byte framebuffer. */
 struct lights {
-    int fd, active, volume, steps;
+    int fd, active, volume, steps, paused;
+    enum action scene;
     unsigned char last[18];
     int64_t started, next_frame, yield_until;
 };
@@ -47,8 +48,7 @@ static int lights_open(struct lights *l) {
 }
 static void lights_begin(struct lights *l, enum action action, int paused, int volume, int steps,
                          int64_t now) {
-    (void)paused;
-    if (action != LOUDER && action != QUIETER)
+    if (action != LOUDER && action != QUIETER && action != TOGGLE)
         return;
     if (now < l->yield_until)
         return;
@@ -61,6 +61,8 @@ static void lights_begin(struct lights *l, enum action action, int paused, int v
         return;
     l->volume = volume;
     l->steps = steps;
+    l->scene = action;
+    l->paused = paused;
     l->started = l->next_frame = now;
 }
 static void lights_tick(struct lights *l, int64_t now) {
@@ -73,6 +75,26 @@ static void lights_tick(struct lights *l, int64_t now) {
     }
     enum { HOLD_MS = 300, FADE_MS = 250 };
     int elapsed = (int)((now - l->started) / 1000);
+    if (l->scene == TOGGLE) {
+        enum { PULSE_MS = 380 };
+        if (elapsed >= PULSE_MS) {
+            lights_close(l, 1);
+            return;
+        }
+        int level = elapsed < 60 ? (elapsed + 20) * 80 / 80 : (PULSE_MS - elapsed) * 80 / 320;
+        unsigned char frame[18];
+        for (int pixel = 0; pixel < 6; pixel++) {
+            frame[pixel * 3] = (unsigned char)(l->paused ? 0 : level / 24);
+            frame[pixel * 3 + 1] = (unsigned char)(l->paused ? level / 3 : level);
+            frame[pixel * 3 + 2] = (unsigned char)(l->paused ? level : level / 12);
+        }
+        if (memcmp(frame, l->last, 18) != 0 && !lights_write(l, frame)) {
+            lights_close(l, 0);
+            return;
+        }
+        l->next_frame = now + 20000;
+        return;
+    }
     if (elapsed >= HOLD_MS + FADE_MS) {
         lights_close(l, 1);
         return;

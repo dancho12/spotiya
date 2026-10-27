@@ -724,7 +724,10 @@ async fn run(options: Options) -> Result<(), Box<dyn std::error::Error>> {
             .unwrap_or(true);
     let spectrum_setting = options.state_dir.join("spectrum-enabled");
     let spectrum_supported = caps.display
-        && matches!(profile.controls.as_ref().map(|c| c.driver), Some(profiles::Driver::Mini2));
+        && matches!(
+            profile.controls.as_ref().map(|c| c.driver),
+            Some(profiles::Driver::Mini2)
+        );
     let spectrum_enabled =
         spectrum_supported && fs::read_to_string(&spectrum_setting).is_ok_and(|s| s.trim() == "1");
     let last_track_file = options.state_dir.join("last-track");

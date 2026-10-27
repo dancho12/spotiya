@@ -272,19 +272,25 @@ fn capabilities(p: &Profile, root: &Path) -> Capabilities {
                 caps.ring = c.ring_prefix.as_ref().is_some_and(|prefix| {
                     ["red", "green", "blue"].iter().all(|color| {
                         (1..=6).all(|segment| {
-                            rooted(root, &format!("{prefix}{color}:ring{segment}/brightness")).exists()
+                            rooted(root, &format!("{prefix}{color}:ring{segment}/brightness"))
+                                .exists()
                         })
                     })
                 });
                 caps.display = c.display_prefix.as_ref().is_some_and(|prefix| {
                     (1..=4).all(|digit| {
                         (b'A'..=b'G').all(|segment| {
-                            rooted(root, &format!("{prefix}{}{digit}/brightness", char::from(segment)))
-                                .exists()
+                            rooted(
+                                root,
+                                &format!("{prefix}{}{digit}/brightness", char::from(segment)),
+                            )
+                            .exists()
                         })
                     }) && ["PLUS1", "PLUS2", "PLUS3", "PLUS4", "MINUS", "DEGREE"]
                         .iter()
-                        .all(|suffix| rooted(root, &format!("{prefix}{suffix}/brightness")).exists())
+                        .all(|suffix| {
+                            rooted(root, &format!("{prefix}{suffix}/brightness")).exists()
+                        })
                 });
             }
             Driver::Mini3 => {
@@ -296,17 +302,21 @@ fn capabilities(p: &Profile, root: &Path) -> Capabilities {
                     == Some("/sys/class/leds/bergamot:white:clock")
                     && (0..4).all(|digit| {
                         (b'A'..=b'G').all(|segment| {
-                            rooted(root, &format!(
-                                "/sys/class/leds/bergamot:white:clock{}{digit}/brightness",
-                                char::from(segment)
-                            ))
+                            rooted(
+                                root,
+                                &format!(
+                                    "/sys/class/leds/bergamot:white:clock{}{digit}/brightness",
+                                    char::from(segment)
+                                ),
+                            )
                             .exists()
                         })
                     })
                     && ["DEGREE", "DH", "DL", "DM"].iter().all(|suffix| {
-                        rooted(root, &format!(
-                            "/sys/class/leds/bergamot:white:clock{suffix}/brightness"
-                        ))
+                        rooted(
+                            root,
+                            &format!("/sys/class/leds/bergamot:white:clock{suffix}/brightness"),
+                        )
                         .exists()
                     });
             }
